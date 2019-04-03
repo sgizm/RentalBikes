@@ -1,0 +1,186 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Introduction
+
+# Load libraries
+
+```{r,eval=TRUE,include=FALSE}
+library(ggplot2)
+library(GGally)
+library(vcd)
+library(data.table)
+#library(gmodels)
+library(Hmisc)
+library(corrplot)
+library(magrittr)
+library(reshape2)
+library(scales)
+library(readr)
+library(car)
+library(rgl)
+library(nFactors)
+library(cluster)
+library(pvclust)
+library(plyr)
+library(PerformanceAnalytics)
+library(gplots)
+#library(factoextra)
+library(class)
+library(graphics)
+library(NbClust)
+#library(ComplexHeatmap)
+library(arules)
+library(arulesViz)
+```
+
+# Load data
+```{r}
+data <- read.csv( file = "kpmg.csv")
+summary(data)
+```
+
+# Recoding
+```{r}
+# Converting integers to factor
+# Converting integers to factor
+# data$season <- factor(data$season, 
+#                          levels = c(1:4), 
+#                          labels = c("season1", "season2", "season3", "season4"))
+# data$holiday <- factor(data$holiday, levels = c(0:1), 
+#                          labels = c("nonholiday", "holiday"))
+# data$workingday <- factor(data$workingday, levels = c(0:1), 
+#                          labels = c("nonworkingday", "workingday"))
+# data$weathersit <- factor(data$weathersit, levels = c(1:3), 
+#                          labels = c("weather1", "weather2", "weather3"))
+# data$weekday <- factor(data$weekday, levels = c(0:6), 
+#                          labels = c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"))
+# # Extract day from datetime value
+# data$dteday = as.POSIXct(data$dteday, format="%m/%d/%Y") 
+# 
+# vec <- data$temp
+# qs <- quantile(vec, seq(0,1,0.25))
+# it <- findInterval(vec, qs)
+# data$temp <- factor(it, 
+#                          levels = c(1:4), 
+#                          labels = c("low2", "low1", "high1", "high2"))
+# 
+# vec2 <- data$hum
+# qs2 <- quantile(vec, seq(0,1,0.25))
+# it2 <- findInterval(vec2, qs2)
+# data$hum <- factor(it2, 
+#                          levels = c(1:4), 
+#                          labels = c("low2", "low1", "high1", "high2"))
+# 
+# vec3 <- data$windspeed
+# qs3 <- quantile(vec3, seq(0,1,0.25))
+# it3 <- findInterval(vec3, qs3)
+# data$windspeed <- factor(it3, 
+#                          levels = c(1:4), 
+#                          labels = c("low2", "low1", "high1", "high2"))
+# 
+# str(data)
+
+# Removing the first col
+# data <- data[,-1]
+catData <-
+  purrr::map_dfc( numCols, function(nc) { 
+    vec <- data[[nc]]
+    # bpoints <- unique( quantile( vec, unique(c(seq(0,0.9,0.1), seq(0.9,1,0.05)) ), na.rm = T) )
+    bpoints <- unique( quantile( vec, c(seq(0,1,0.2)), na.rm = T) )
+    intervalNames <- purrr::map2_chr( bpoints[-length(bpoints)], bpoints[-1], function(x, y) paste0( x, "≤v<", y )) 
+    resVec <- findInterval( data[[nc]], vec = bpoints, all.inside = T )
+    resVec <- intervalNames[resVec]
+    resVec
+  })
+catData <- setNames(catData, numCols)
+
+catData2 <- data[ , setdiff( colnames(data), numCols) ]
+catData2 <- 
+  purrr::map_dfc( colnames(catData2), 
+                  function(nc) { 
+                    as.character(catData2[[nc]])
+                  })
+colnames(catData2) <- setdiff( colnames(data), numCols)
+catData2 <- cbind( catData, catData2[-1] )
+catData22 <- as.data.frame(unclass(catData2))
+```
+
+
+# all non numericals
+```{r}
+#clus_data <- read.csv("factors.csv")
+# catData22 <- as.data.frame(catData2)
+# is.fact <- sapply(catData22, is.factor)
+# factors.df <- catData22[, is.fact]
+# summary(factors.df) # selecting only the factors 
+
+# forgot what the below is doing 
+# rmcols <- rev(seq(1,ncol(clus_data))[sapply(clus_data, is.numeric)])
+# for (i in rmcols) clus_data[[i]] <- NULL
+# colnames(clus_data)
+# class(clus_data)
+# str(clus_data)
+# 
+ cols <- c(1, 3:4, 7:9,10, 11, 14) 
+ trial <- catData22[, cols]
+ trial_non <- na.omit(trial)
+ str(trial_non)
+```
+
+```{r}
+# First a sort function
+setMethod("sort", signature(x = "associations"),
+  function (x, decreasing = TRUE, na.last = NA, by = "support", ...) {
+    q <- quality(x)
+    q <- q[, pmatch(by, colnames(q)), drop = FALSE]
+    if(is.null(q)) stop("Unknown interest measure to sort by.")
+    if(length(x) == 0) return(x)
+    x[do.call(order, c(q, list(na.last = na.last, decreasing = decreasing)))]
+}) 
+
+rules = apriori(trial, parameter=list(support=0.05, confidence=0.5, minlen=3, maxlen=7, maxtime=150), appearance = list( rhs=c("yr=0"), default = "lhs"))
+
+sorted_mult <- sort(rules, decreasing = TRUE, by=c("confidence", "count"))
+inspect(sorted_mult[1:20])
+
+#, appearance = list( rhs=c("X3.3B.1=agree"), default = "lhs")
+#, appearance = list(lhs=c("INVE.1=agree"))
+rules
+topRules <- rules[1:10]
+inspect(rules[1:15])
+top.confidence <- sort(rules, decreasing = TRUE, na.last = NA, by = "confidence")
+inspect(top.confidence[1:40])
+top.lift <- sort(rules, decreasing = TRUE, na.last = NA, by = "lift")
+inspect(top.lift[1:40])
+plot(sorted_mult[1:7], method = "graph")
+plot(topRules, method = "grouped")
+
+```
+# Mosaic confirmations
+```{r}
+subs_pal <- colorspace::diverge_hcl(7)
+
+#mosaic( condexp ~ ROLE, data = data2, rot_labels=c(33,0,0,0), highlighting_fill = subs_pal[3:6], labeling_args = list(set_varnames = c(condexp=" ", ROLE=""), just_labels = c("left", "center",   "center",  "right"), offset_labels = c(-0.72, 0, 0, 0)), labeling_args = list(set_varnames = c(cnt=" ", workingday=""))
+
+vcd::mosaic( cnt ~  yr , catData22, highlighting_fill = subs_pal[1:5], rot_labels=c(45,45,0,90))
+
+vcd::mosaic( cnt ~  workingday + season , catData22, highlighting_fill = subs_pal[1:5], rot_labels=c(0,45,0,90),  offset_labels = c(0, 0, 0, 0), labeling_args = list(set_varnames = c(cnt=" ", workingday="")))
+
+vcd::mosaic( cnt ~  workingday + temp , catData22, highlighting_fill = subs_pal[1:5], rot_labels = c(36,40,0,0), 
+                                 just_labels = c("left", 
+                                                 "left", 
+                                                 "left", 
+                                                 "right"), offset_labels = c(-0.1, -1, 0, -0.2), labeling_args = list(set_varnames = c(cnt=" ", temp=""))) 
+
+
+```
+
+```{r}
+xdf <- xtabs(~  workingday + temp, catData22, sparse = T)
+
+as.matrix(xdf/rowSums(xdf))
+```
+

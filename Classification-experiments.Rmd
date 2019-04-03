@@ -1,0 +1,119 @@
+---
+title: "Classification experiments"
+output: html_notebook
+---
+
+```{r}
+library(e1071)
+```
+
+# NBC experiments
+
+```{r}
+trainingIndexes <- sample( 1:nrow(catData2), 500)
+testIndexes <- setdiff( 1:nrow(catData2), trainingIndexes)
+```
+
+```{r}
+catData4 <- as.data.frame(unclass(catData2))
+summary(catData4)
+```
+
+```{r}
+summary(catData4[trainingIndexes, "cnt"])/length(trainingIndexes)
+```
+
+```{r}
+summary(catData4[testIndexes, "cnt"])/length(testIndexes)
+```
+
+```{r}
+model <- e1071::naiveBayes( cnt ~ temp + weekday + windspeed, data = catData4[trainingIndexes, ] )
+```
+
+```{r}
+clRes <- predict( model, catData4[testIndexes, ])
+```
+
+```{r}
+xtabs( ~ Actual + Predicted, data.frame( Actual = catData4[testIndexes, "cnt"], Predicted = clRes ) )
+```
+
+# SMR classfication experiments
+
+```{r}
+smrCL <- smr
+```
+
+```{r}
+dim(smrCL$M)
+```
+
+```{r}
+set.seed(3453)
+trainingIndexes <- sample( 1:nrow(smrCL$M), 600)
+testIndexes <- setdiff( 1:nrow(smrCL$M), trainingIndexes)
+```
+
+```{r}
+testMat <- smrCL$M[testIndexes, ]
+smrCL$M <- smrCL$M[trainingIndexes,]
+```
+
+```{r}
+#smrCL$M <- SMRApplyTermWeightFunctions( smrCL$M, "Entropy", "None", "Cosine" )
+```
+
+
+```{r}
+cntActualLabels <-
+  purrr::map_chr( 1:nrow(testMat), function(i) {
+    profVec <- testMat[i,]
+    actualLabel <- profVec[ grep("cnt", colnames(testMat)) ] > 0
+    names(profVec[ grep("cnt", colnames(testMat)) ])[actualLabel] 
+  })
+```
+
+```{r}
+registeredActualLabels <-
+  purrr::map_chr( 1:nrow(testMat), function(i) {
+    profVec <- testMat[i,]
+    actualLabel <- profVec[ grep("registered", colnames(testMat)) ] > 0
+    names(profVec[ grep("registered", colnames(testMat)) ])[actualLabel] 
+  })
+```
+
+```{r, eval=F}
+# Do not like this approach.
+catData[testIndexes,"cnt"]
+```
+
+
+```{r}
+testMat[, grep("cnt", colnames(testMat)) ] <- 0
+testMat[, grep("registered", colnames(testMat)) ] <- 0
+#testMat[, grep("instant", colnames(testMat)) ] <- 0
+testMat[, grep("casual", colnames(testMat)) ] <- 0
+```
+
+```{r}
+smrCL$TagTypes
+```
+
+```{r}
+classTagType <- "cnt"
+smrCL$M <- SMRApplyTagTypeWeights( smr = smrCL, weights = c("yr" = 10))
+clRes <-
+  purrr::map_lgl( 1:nrow(testMat), function(i) {
+    profVec <- testMat[i,,drop=F]
+    recs <- SMRClassifyByProfileVector( smr = smrCL, tagType = classTagType, profileVec = profVec, nTopNNs = 20)
+    #cntActualLabels[[i]] == recs$Label[[1]]
+    cntActualLabels[[i]] %in% recs$Label[1:2]
+  })
+```
+
+```{r}
+mean(clRes)
+```
+
+

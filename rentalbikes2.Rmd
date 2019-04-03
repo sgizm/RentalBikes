@@ -1,0 +1,216 @@
+---
+title: "Kpmg"
+author: "Sezin"
+date: "3/20/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sqldf)
+library(ggplot2)
+library(e1071)
+library(lattice)
+#library(ParetoPrincipleAdherence)
+library(dplyr)
+library(vcd)
+```
+
+# Distribution of rental counts 
+
+```{r}
+lattice::histogram( data$cnt)
+```
+
+
+```{r}
+vcd::mosaic( season ~ mnth, data )
+```
+
+```{r}
+vcd::mosaic( season ~ year, catData2)
+
+```
+
+```{r data}
+ data <- read.csv( file = "...csv")
+ summary(data)
+summary (catData)
+# data2 <- read.csv( file = "day_Cali.csv")
+# summary(data2)
+
+```
+
+## Feature engineering
+
+
+```{r}
+# Converting integers to factor
+data$season <- factor(data$season, 
+                         levels = c(1:4), 
+                         labels = c("season1", "season2", "season3", "season4"))
+data$holiday <- factor(data$holiday, levels = c(0:1), 
+                         labels = c("nonholiday", "holiday"))
+data$workingday <- factor(data$workingday, levels = c(0:1), 
+                         labels = c("nonworkingday", "workingday"))
+data$weathersit <- factor(data$weathersit, levels = c(1:3), 
+                         labels = c("weather1", "weather2", "weather3"))
+data$weekday <- factor(data$weekday, levels = c(0:6), 
+                         labels = c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"))
+# Extract day from datetime value
+data$dteday = as.POSIXct(data$dteday, format="%m/%d/%Y") 
+data$year2 <- year(data$dteday)
+
+vec <- data$temp
+qs <- quantile(vec, seq(0,1,0.25))
+it <- findInterval(vec, qs)
+data$temp <- factor(it, 
+                         levels = c(1:4), 
+                         labels = c("low2", "low1", "high1", "high2"))
+
+vec2 <- data$hum
+qs2 <- quantile(vec, seq(0,1,0.25))
+it2 <- findInterval(vec2, qs2)
+data$hum <- factor(it2, 
+                         levels = c(1:4), 
+                         labels = c("low2", "low1", "high1", "high2"))
+
+vec3 <- data$windspeed
+qs3 <- quantile(vec3, seq(0,1,0.25))
+it3 <- findInterval(vec3, qs3)
+data$windspeed <- factor(it3, 
+                         levels = c(1:4), 
+                         labels = c("low2", "low1", "high1", "high2"))
+
+str(data)
+
+```
+## Data exploration
+
+```{r}
+ggplot(data,aes(temp,cnt)) + 
+  geom_point(aes(color=temp),alpha=0.7) + theme_bw()
+```
+```{r}
+ggplot(data,aes(dteday,cnt)) + 
+  geom_point(aes(color=temp),alpha=0.7) + 
+  scale_color_gradientn(colors=c('dark blue','blue','light blue','light green','yellow','orange','red')) + 
+  theme_bw() 
+
+# rentals when it is not workingday
+ggplot(dplyr::filter(data,workingday==0),aes(dteday,cnt)) + ggtitle("rentals when it is not workingday") +
+  geom_point(aes(color=temp),alpha=0.8,position=position_jitter(w=2, h=0)) + 
+  scale_color_gradientn(colors=c('dark blue','blue','light blue','light green','yellow','orange','red')) +
+  theme_bw()
+```
+```{r}
+ggplot(data,aes(season,cnt)) + 
+  geom_boxplot(aes(color=season),alpha=0.8) + 
+  theme_bw() + ggtitle("Bikes Rent By Season")+ scale_colour_hue('Season',breaks = levels(data$season))
+```
+```{r}
+ggplot(data,aes(windspeed,cnt)) + 
+  geom_point(aes(color=windspeed),alpha=0.7) + theme_bw()
+```
+  
+```{r}
+# Get the average count of bikes rent by season, hourata group by season, weekday')
+season_summary_by_day <- sqldf('select season, weekday, avg(cnt) as cnt from data group by season, weekday')
+
+ggplot(data, aes(x=weekday, y=cnt, color=season))+geom_point(data = season_summary_by_day, aes(group = season))+geom_line(data = season_summary_by_day, aes(group = season))+ggtitle("Bikes Rent By Season")+ scale_colour_hue('Season',breaks = levels(data$season), labels=c('winter', 'spring', 'summer', 'fall'))
+```
+
+
+```{r}
+ggplot(data) +
+  geom_boxplot( aes( x = factor(weekday, labels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")), y = cnt)) +
+  facet_wrap( ~season ) +
+  ggtitle("Bikes Rent By weekday")
+```
+
+```{r}
+ggplot(data) +
+  geom_boxplot( aes( x = factor(holiday), y = cnt)) +
+  facet_wrap( ~year2) +
+  ggtitle("Bikes Rent By Working Days") +
+  theme(axis.title.x=element_blank(),
+        #axis.text.y=element_blank(),
+        #axis.ticks.x=element_blank(),
+        axis.title.y=element_blank())
+```
+
+```{r}
+# Get the average count of bikes rent by weathersit, weekday
+weather_summary_by_weathersit <- sqldf('select weathersit, weekday, avg(cnt) as cnt from data group by weathersit, weekday')
+
+ggplot(data, aes(x=weekday, y=cnt, color=weathersit))+geom_point(data = weather_summary_by_weathersit, aes(group = weathersit))+geom_line(data = weather_summary_by_weathersit, aes(group = weathersit))+ggtitle("Bikes Rent By Weather")+ scale_colour_hue('Weather',breaks = levels(data$weathersit), labels=c('Good', 'Normal', 'Bad'))
+```
+```{r}
+# Get the average count of bikes rent by holiday, weekday
+weather_summary_by_holiday <- sqldf('select holiday, weekday, avg(cnt) as cnt from data group by holiday, weekday')
+
+ggplot(data, aes(x=weekday, y=cnt, color=holiday))+geom_point(data = weather_summary_by_holiday, aes(group = holiday))+geom_line(data = weather_summary_by_holiday, aes(group = holiday))+ggtitle("Bikes Rent By Holiday")+ scale_colour_hue('Holiday',breaks = levels(data$holiday), labels=c('Normal', 'Holiday'))
+```
+
+
+# Mosaics
+```{r}
+s
+vcd::mosaic( season ~ year, catData22)
+
+mosaic( ROLE ~ gender, data = data, color=2:3, rot_labels=c(45,45,45,45)  )
+```
+
+
+## Correlations
+```{r}
+#cor(data$temp,data$atemp)
+
+
+drops <- c("yr", "atemp", "instant")
+data <- data[ , !(names(data) %in% drops)]
+
+numericColumns <- sapply(data, is.numeric)
+nData <- data[, numericColumns]
+
+cor <- cor(nData)
+library(corrplot)
+corrplot(cor, method = 'color', addCoef.col="black")
+
+```
+
+## Splitting the train set
+```{r}
+sapply(data, function(x) sum(is.na(x)))
+
+library(caTools)
+set.seed(123)
+split <- sample.split(data$cnt, SplitRatio = 0.75)
+training_set <- subset(data, split == TRUE)
+validation_set <- subset(data, split == FALSE)
+
+# Applying Linear Regression model
+lmBikeRent <- lm(cnt~., data = training_set)
+summary(lmBikeRent)
+
+```
+## Residual plots
+```{r}
+par(mfrow = c(2, 2))
+plot(lmBikeRent)
+
+```
+
+```{r}
+# Fitting Multiple Linear Regression to the Training set
+train_subset = select(training_set, season, holiday, workingday, weathersit, temp, hum, windspeed, cnt)
+regressor = lm(formula = cnt ~ . , data = train_subset)
+
+# Choosing the best model by AIC in a Stepwise Algorithm
+# The step() function iteratively removes insignificant features from the model.
+regressor = step(regressor)
+```
+

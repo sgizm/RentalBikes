@@ -1,0 +1,98 @@
+---
+title: "Day-to-day predictions"
+output: html_notebook
+---
+
+```{r, eval=F}
+devtools::install_github("antononcube/QRMon-R")
+```
+
+```{r}
+library(lubridate)
+library(lattice)
+library(QRMon)
+library(magrittr)
+```
+
+# Introduction
+
+Trying to predict today from yesterday.
+
+# Definitions
+
+```{r}
+DayToDayPairs <- function( data, dateColumnName, valueColumnName ) {
+  qDF <- data[, c(dateColumnName, valueColumnName )]
+  qDF <- qDF[ order(qDF[[dateColumnName]]), ]
+  data.frame( "TodayDate" = data[[dateColumnName]][-1], 
+              "ValueYesterday" = data[[valueColumnName]][-nrow(qDF)], 
+              "ValueToday" = data[[valueColumnName]][-1], 
+              stringsAsFactors = FALSE )  
+}
+```
+
+
+
+# Day-to-day stats
+
+```{r}
+summary(DayToDayPairs(data, "dteday", "temp"))
+```
+
+```{r}
+lattice::xyplot( ValueToday ~ ValueYesterday, DayToDayPairs(data, "dteday", "temp"), aspect = 1 )
+```
+
+```{r}
+lattice::xyplot( ValueToday ~ ValueYesterday, DayToDayPairs(data, "dteday", "windspeed"), aspect = 1 )
+```
+
+```{r}
+lattice::xyplot( ValueToday ~ ValueYesterday, DayToDayPairs(data, "dteday", "cnt"), aspect = 1 )
+```
+
+
+
+```{r}
+qDF <- DayToDayPairs(data, "dteday", "cnt") 
+qDF <- cbind( qDF, Year = as.character(year(as.POSIXct(qDF$TodayDate,  format="%m/%d/%Y"))) )
+lattice::xyplot( ValueToday ~ ValueYesterday | Year, qDF,  aspect = 1)
+```
+
+```{r}
+qDF %>% 
+  dplyr::group_by( Year ) %>% 
+  dplyr::summarise( TotalCount = sum(ValueToday), MeanCount = mean(ValueToday))
+```
+
+# Prediction
+
+```{r}
+qrObj <-
+  QRMonUnit(  DayToDayPairs(data, "dteday", "cnt")[, c(2,3)] ) %>% 
+  QRMonQuantileRegression( df = 4, quantiles = c(0.02,0.98)) %>% 
+  QRMonOutliers %>% 
+  QRMonOutliersPlot
+```
+
+```{r}
+qrObj <-
+  QRMonUnit(  DayToDayPairs(data, "dteday", "cnt")[, c(2,3)] ) %>% 
+  QRMonQuantileRegression( df = 6, degree = 2, quantiles = seq(0,1,0.1)) %>% 
+  QRMonPlot
+```
+
+
+```{r}
+cdfFunc <- qrObj %>% QRMonConditionalCDF( timePoints = c(5000) ) %>% QRMonTakeValue
+cdfFunc <- cdfFunc[[1]]
+qDF <- seq(2000,8000)
+qDF <- data.frame( Counts = qDF, CDF = purrr::map_dbl( qDF, function(x) cdfFunc(x) ) )
+lattice::xyplot( CDF ~ Counts, qDF )
+```
+
+```{r}
+res <- qrObj %>% QRMonPredict( newdata = c(5000) ) %>% QRMonTakeValue
+dplyr::bind_rows( res, .id = "Quantile" )
+```
+

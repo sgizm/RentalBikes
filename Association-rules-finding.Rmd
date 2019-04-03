@@ -1,0 +1,29 @@
+---
+title: "Association rules"
+output: html_notebook
+---
+
+```{r}
+library(arules)
+library(vcd)
+```
+
+```{r}
+ares <- arules::eclat(catData22, parameter = list( support = 0.05, minlen = 2, maxlen = 3 ) )
+
+```
+
+```{r}
+#sorted_mult <- ruleInduction(ares, decreasing = TRUE, by=c("confidence", "count"))
+inspect(ares[1:20])
+```
+
+
+```{r}
+arules::ruleInduction( ares )
+```
+
+```{r}
+vcd::mosaic( temp ~ weekday + cnt, catData2, rot_labels = c(45,45,0,0) )
+```
+

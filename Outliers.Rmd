@@ -1,0 +1,83 @@
+---
+title: "Outliers"
+output: html_notebook
+---
+
+```{r, eval=FALSE}
+devtools::install_github("antononcube/R-packages", subdir = "OutlierIdentifiers")
+```
+
+```{r}
+library(OutlierIdentifiers)
+```
+
+```{r}
+data <- read.csv( file = "...csv")
+summary(data)
+```
+
+
+```{r}
+numCols <- names(data)[ purrr::map_lgl( colnames(data), function(x) is.numeric(data[[x]])) ]
+numCols
+```
+
+# Scatter plots
+
+```{r}
+pairs( data[ ,numCols])
+```
+
+```{r}
+lattice::histogram( ~ cnt | yr, data )
+```
+
+```{r, fig.height = 8}
+lattice::histogram( ~ cnt | yr * season, data )
+```
+
+
+```{r}
+pairs( data[ data$season == 1 & data$workingday == 1, numCols ] )
+```
+
+```{r}
+# Too messy
+# lattice::splom( x = ~ data[, numCols] | season * workingday, data )
+```
+
+# Outliers
+
+```{r}
+res <-
+  purrr::map_int( numCols, function(nm) {
+    length(OutlierIdentifier( data[[nm]], identifier = SPLUSQuartileIdentifierParameters ))
+  })
+names(res) <- numCols
+res
+```
+```{r}
+lattice::histogram(data$hum)
+```
+```{r}
+OutlierIdentifier( data$hum, SPLUSQuartileIdentifierParameters)
+```
+
+
+```{r}
+lattice::histogram(data$windspeed)
+```
+
+
+```{r}
+OutlierIdentifier( data$windspeed, SPLUSQuartileIdentifierParameters)
+```
+
+```{r}
+lattice::histogram(data$casual)
+```
+
+```{r}
+OutlierIdentifier( data$casual, SPLUSQuartileIdentifierParameters)
+```
+

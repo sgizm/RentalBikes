@@ -1,0 +1,283 @@
+---
+title: "SMR recommender experiments"
+date: "```r Sys.Date()```"
+output: html_notebook
+---
+
+```{r, eval=F}
+devtools::install_github("antononcube/R-packages", subdir = "SparseMatrixRecommender")
+```
+
+```{r}
+library(SparseMatrixRecommender)
+library(purrr)
+library(dplyr)
+library(Matrix)
+library(ggplot2)
+```
+
+
+# Introduction
+
+# Read data
+
+```{r}
+data <- read.csv( file = "...csv", stringsAsFactors = FALSE)
+head(data,10)
+```
+
+# ```{r}
+# data$dteday <- as.POSIXct( data$dteday, format = "%m/%d/%Y")
+# ```
+
+
+```{r}
+summary(as.data.frame(unclass(data)))
+```
+
+# Categorize numerical variables (warm-up)
+
+```{r}
+seq(min(data$cnt), max(data$cnt), (max(data$cnt)-min(data$cnt))/10 )
+```
+
+```{r}
+quantile( data$cnt, seq(0,1,0.1) )
+```
+
+```{r}
+breaks <- quantile( data$cnt, unique(c( seq(0,0.9,0.1), seq(0.9, 1, 0.025) )) )
+breaks
+```
+
+```{r}
+findInterval( data$cnt, vec = breaks )
+```
+
+# Categorize numerical variables
+
+```{r}
+numCols <- names(data)[ purrr::map_lgl( colnames(data), function(x) is.numeric(data[[x]])) ]
+numCols
+```
+
+```{r}
+numCols <- c( "temp", "atemp", "hum", "windspeed", "casual", "registered", "cnt")
+```
+
+```{r}
+catData <-
+  purrr::map_dfc( numCols, function(nc) { 
+    vec <- data[[nc]]
+    # bpoints <- unique( quantile( vec, unique(c(seq(0,0.9,0.1), seq(0.9,1,0.05)) ), na.rm = T) )
+    bpoints <- unique( quantile( vec, c(seq(0,1,0.2)), na.rm = T) )
+    intervalNames <- purrr::map2_chr( bpoints[-length(bpoints)], bpoints[-1], function(x, y) paste0( x, "≤v<", y )) 
+    resVec <- findInterval( data[[nc]], vec = bpoints, all.inside = T )
+    resVec <- intervalNames[resVec]
+    resVec
+  })
+catData <- setNames(catData, numCols)
+```
+
+```{r}
+summary(as.data.frame(unclass(catData)))
+```
+
+```{r}
+catData2 <- data[ , setdiff( colnames(data), numCols) ]
+catData2 <- 
+  purrr::map_dfc( colnames(catData2), 
+                  function(nc) { 
+                    as.character(catData2[[nc]])
+                  })
+colnames(catData2) <- setdiff( colnames(data), numCols)
+```
+
+```{r}
+catData2 <- cbind( catData, catData2[-1] )
+summary(as.data.frame(unclass(catData2)))
+```
+
+
+# Sparse Matrix Recommender (SMR) creation
+
+```{r}
+dim(catData2) 
+```
+
+
+```{r, eval=FALSE}
+# This is easy, but we want column names to have prefixes, and the matrices to be weighted.
+# smr <- SMRCreate( dataRows = cbind( id = 1:nrow(catData2), catData2, stringsAsFactors=FALSE), tagTypes = names(catData2), itemColumnName = "id")
+```
+
+```{r}
+catData3 <- cbind( id = 1:nrow(catData2), catData2, stringsAsFactors=FALSE)
+catData3
+```
+
+
+```{r}
+smats <- 
+  purrr::map( colnames(catData3)[-1], function(nm) { 
+    print(nm)
+    m <- SMRCreateItemTagMatrix( dataRows = catData3, tagType = nm, itemColumnName = "id", sparse = T )
+    # m <- SMRApplyTermWeightFunctions( docTermMat = m, "None", "None", "Cosine" ) # not needed
+    if(nrow(m) == 0 ) { 
+      NA 
+    } else { 
+      colnames(m) <- paste(nm, colnames(m), sep = "=" )
+      m
+    }
+  })
+names(smats) <- colnames(catData3)[-1]
+smats <- smats[ !is.na(smats) ]
+```
+
+```{r}
+allRowIDs <- unique(unlist(purrr::map( smats, rownames )))
+smats <- purrr::map( smats, function(m) SMRImposeRowIDs( rowIDs = allRowIDs, smat = m ) )
+smr <- SMRCreateFromMatrices( matrices = smats, itemColumnName = "id" )
+```
+
+```{r}
+colnames(smats[[3]])
+```
+
+
+```{r}
+image(smats[[1]][1:20,])
+image(smats[[2]][1:20,])
+image(smats[[3]][1:20,])
+```
+
+
+
+```{r}
+smr$TagTypeRanges
+```
+
+```{r}
+str(smr)
+```
+
+```{r}
+smr$TagTypeRanges
+```
+
+
+```{r}
+image(smr$M[1:20,])
+```
+
+```{r}
+sum(smr$M[1,] * smr$M[2,])
+```
+
+### Example recommendations
+
+```{r}
+SMRRecommendations( smr = smr, userHistoryItems = c(10), userRatings = c(1), nrecs = 12)
+```
+
+```{r}
+dim(smr$M)
+```
+
+```{r}
+colnames(smr$M)
+```
+
+# Study recommendations
+
+```{r}
+profDF <- data.frame( Score = c(1), Tag = c("temp=0.0591304≤v<0.315833", "windspeed=0.248309≤v<0.507463", "hum=0.585217≤v<0.66875", "weekday=0" ), stringsAsFactors = FALSE)
+profDF
+```
+
+
+```{r}
+recs <- SMRRecommendationsByProfileDF( smr = smr, profile = profDF, nrecs = 40 )
+recs <- recs[ recs$Score >=2, ]
+recs
+```
+
+
+```{r}
+SMRMetadataProofs( smr = smr, toBeLovedItem = c(recs$Item[[3]]), profile = profDF)
+```
+
+
+```{r}
+inner_join( recs, catData3[, c("id", "cnt", "registered")], by = c("Index"="id"))
+```
+
+
+```{r}
+catData3[recs$Index,] %>% 
+  dplyr::group_by( cnt ) %>% 
+  dplyr::count() %>% 
+  dplyr::arrange(desc(n))
+```
+
+# Classification
+
+## Experiments
+
+```{r}
+profDF <- data.frame( Score = c(1), Tag = c("temp=0.0591304≤v<0.315833", "weekday=1" ), stringsAsFactors = FALSE)
+profVec <- SMRProfileDFToVector( smr = smr, profileDF = profDF )
+```
+
+
+```{r}
+recs <- SMRClassifyByProfileVector( smr = smr, tagType = "cnt", profileVec = profVec, nTopNNs = 200)
+recs$Score <- recs$Score / max(recs$Score)
+recs
+```
+
+```{r}
+recs <- SMRClassifyByProfileVector( smr = smr, tagType = "registered", profileVec = profVec, nTopNNs = 20)
+recs$Score <- recs$Score / max(recs$Score)
+recs
+```
+
+# Mean vectors per class
+
+```{r}
+smat <- SMRSubMatrix( smr, "cnt")
+colnames(smat)
+```
+
+```{r}
+meanVecs <-
+  purrr::map( colnames(smat), function(cn) {
+    m <- smr$M[ smr$M[,cn] > 0, ]
+    colMeans(m)
+  })
+names(meanVecs) <- colnames(smat)
+```
+
+
+```{r}
+distsDF <-
+  purrr::map_dfr( colnames(smat), function(cn) {
+    smat <- smr$M[ smr$M[,cn] > 0, ]
+    mvec <- colMeans(smat)
+    mvecMat <- matrix( rep( mvec,  nrow(smat) ), byrow = T, nrow = nrow(smat) )
+    dMat <- smat - mvecMat
+    res <- sqrt(rowSums(dMat * dMat))
+    data.frame( cnt = cn, Index = (1:nrow(smr$M))[smr$M[,cn] > 0], Distance = res, stringsAsFactors = F)
+  })
+```
+
+```{r}
+ggplot(distsDF) +
+  geom_histogram( aes(x = Distance), bins = 30 ) +
+  facet_wrap( ~cnt )
+```
+
+```{r, eval=F}
+# SMRCreateSearchInterface( itemSMR = smr, itemData = data )
+```
+
